@@ -11,14 +11,14 @@
 Simply fetch the library in your project
 
 ```sh
-$ zig fetch --save https://github.com/AtleSkaanes/smed
+$ zig fetch --save git+https://github.com/AtleSkaanes/smed
 ```
 
 And then add the `libsmed` module to your `build.zig` file
 
 ```zig
 const smed = b.dependency("smed", .{});
-exe.root_module.addImport("libsmed", clap.module("libsmed"));
+exe.root_module.addImport("libsmed", smed.module("libsmed"));
 ```
 
 ### Usage
