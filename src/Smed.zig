@@ -8,6 +8,8 @@ pub const EvalError = error{
     InvalidType,
 } || err.AllocErr;
 
+pub const EvalFileError = error{ReadError} || EvalError || std.fs.File.OpenError;
+
 allocator: std.mem.Allocator,
 lua: *zlua.Lua,
 
@@ -68,7 +70,7 @@ fn printError(lua: *zlua.Lua) void {
 }
 
 /// Cleanup the smed object after a codeblock has been evaluated, so its ready for the next one.
-fn cleanup(self: *Self) EvalError!void {
+pub fn cleanup(self: *Self) EvalError!void {
     _ = self.lua.getGlobal("Smed") catch return error.LuaStackError;
     const table_idx = self.lua.getTop();
     _ = self.lua.getField(table_idx, "raw_html");
@@ -111,13 +113,40 @@ pub fn evalStr(self: *Self, buf: []const u8) EvalError![]u8 {
 /// Evaluate a smed file.
 /// This will return the evaluated code in an allocated slice, using `smed.allocator`.
 /// The caller is responsible for the slice.
-pub fn evalFile(self: *Self, path: []const u8) (EvalError || std.fs.File.OpenError || error{ReadError})![]u8 {
+pub fn evalFile(self: *Self, path: []const u8) EvalFileError![]u8 {
     const f = try std.fs.cwd().openFile(path, .{});
     defer f.close();
 
     const str = f.readToEndAlloc(self.allocator, 10_000_000) catch return error.ReadError;
+    defer self.allocator.free(str);
 
     return try self.evalStr(str);
+}
+
+/// Run a normal luau string.
+/// This will not run `.cleanup()` afterwards, so if you want to clear `Smed.raw_html` after this,
+/// then call `.cleanup()` after this function has finished.
+pub fn runRawLuauStr(self: *Self, str: []const u8) EvalError!void {
+    const zCode = try self.allocator.dupeZ(u8, str);
+    defer self.allocator.free(zCode);
+
+    self.lua.doString(zCode) catch {
+        printError(self.lua);
+        return error.FailedUserCode;
+    };
+}
+
+/// Run a normal luau file.
+/// This will not run `.cleanup()` afterwards, so if you want to clear `Smed.raw_html` after this,
+/// then call `.cleanup()` after this function has finished.
+pub fn runRawLuauFile(self: *Self, path: []const u8) EvalFileError!void {
+    const f = try std.fs.cwd().openFile(path, .{});
+    defer f.close();
+
+    const str = f.readToEndAlloc(self.allocator, 10_000_000) catch return error.ReadError;
+    defer self.allocator.free(str);
+
+    try self.runRawLuaStr(str);
 }
 
 const std = @import("std");
